@@ -278,14 +278,14 @@ pub fn expand_origin(entry: &str, origin: &str) -> Option<String> {
         if let Some(tail) = after.strip_prefix("{ORIGIN}") {
             out.push_str(origin);
             rest = tail;
-        } else if let Some(tail) = after
-            .strip_prefix("ORIGIN")
-            .filter(|t| !t.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_'))
-        {
+        } else {
+            // Bare $ORIGIN, but only when what follows cannot be part of a
+            // longer variable name — $ORIGINAL is not an expansion.
+            let tail = after
+                .strip_prefix("ORIGIN")
+                .filter(|t| !t.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_'))?;
             out.push_str(origin);
             rest = tail;
-        } else {
-            return None;
         }
     }
     out.push_str(rest);
