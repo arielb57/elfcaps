@@ -1,0 +1,129 @@
+# elfcaps capability database.
+#
+# Each [section] is one capability. Keys:
+#   title      one-line description shown in reports
+#   rationale  why importing these symbols matters, and how noisy the signal is
+#   symbols    dynamic symbol names; an *undefined* import of any of them is
+#              reported with confidence=direct, and a read-only string equal to
+#              one of them in an object that imports dlopen/dlsym is reported
+#              with confidence=indirect
+#   strings    literal read-only strings (D-Bus names) that indicate the
+#              capability on their own; reported with confidence=indirect
+#
+# Indented lines continue the previous key. A symbol may belong to only one
+# capability, so every finding has a single meaning.
+
+[selection-read]
+title = Reads clipboard or primary-selection contents
+rationale = On X11 any client can ask the owner of CLIPBOARD or PRIMARY to
+  convert the selection and hand over its contents; there is no permission
+  prompt and the owner cannot tell a paste from a snoop. XConvertSelection and
+  its XCB equivalent are the only way to start that transfer, so an import
+  means the object can read whatever the user last copied or highlighted.
+  Toolkits import it for ordinary paste support, so pair this with
+  selection-watch before drawing conclusions.
+symbols = XConvertSelection xcb_convert_selection xcb_convert_selection_checked
+  gtk_clipboard_wait_for_text gtk_clipboard_wait_for_contents
+  gtk_clipboard_request_text gtk_clipboard_request_contents
+  gdk_clipboard_read_async gdk_clipboard_read_text_async
+  SDL_GetClipboardText SDL_GetPrimarySelectionText glfwGetClipboardString
+
+[selection-watch]
+title = Gets notified whenever any application changes the clipboard
+rationale = XFixes selection notification delivers an event every time a
+  selection changes owner, across all clients. A paste button does not need
+  it; clipboard managers and anything that wants to read every copy the
+  moment it happens do. Combined with selection-read this is the pattern
+  behind silent clipboard harvesting.
+symbols = XFixesSelectSelectionNotify xcb_xfixes_select_selection_notify
+  xcb_xfixes_select_selection_notify_checked
+
+[screen-capture]
+title = Reads pixels of the screen or of other windows
+rationale = X11 lets any client read the framebuffer of the root window or of
+  any other window with GetImage, faster through MIT-SHM, or continuously
+  by redirecting windows off-screen with Composite and naming their pixmaps.
+  Video-call screen sharing uses exactly these calls, so the finding is
+  expected in such apps; it is unexpected in an updater or a chat client
+  without sharing.
+symbols = XGetImage XGetSubImage XShmGetImage xcb_get_image xcb_get_image_unchecked
+  xcb_shm_get_image xcb_shm_get_image_unchecked
+  XCompositeRedirectWindow XCompositeRedirectSubwindows XCompositeNameWindowPixmap
+  xcb_composite_redirect_window xcb_composite_redirect_subwindows
+  xcb_composite_name_window_pixmap gdk_pixbuf_get_from_window
+
+[screen-change-tracking]
+title = Tracks which parts of the screen change
+rationale = The DAMAGE extension reports regions of a drawable that were
+  repainted. Screen recorders and remote-desktop servers use it to capture
+  only what changed; ordinary GUI clients almost never create Damage objects
+  on windows they do not own.
+symbols = XDamageCreate xcb_damage_create xcb_damage_create_checked
+
+[pipewire-stream]
+title = Consumes PipeWire media streams (Wayland screen cast, cameras, audio)
+rationale = On Wayland, screen capture is granted by the xdg-desktop-portal
+  ScreenCast interface and then delivered as a PipeWire stream. These symbols
+  are what a client uses to connect to and read frames from such a stream.
+  They are shared with audio and camera capture, so this entry says "can
+  consume a media stream", not "captures the screen"; look for
+  portal-screencast to narrow it down.
+symbols = pw_stream_connect pw_stream_dequeue_buffer pw_stream_new_simple
+
+[portal-screencast]
+title = Requests screen capture through xdg-desktop-portal
+rationale = D-Bus method calls are not symbols: the interface name is a string
+  passed to GDBus, libdbus or sd-bus at run time. A read-only string naming
+  the ScreenCast or RemoteDesktop portal is strong evidence the object asks
+  for screen capture or input control on Wayland, but it is still a string,
+  so the finding is indirect.
+strings = org.freedesktop.portal.ScreenCast org.freedesktop.portal.RemoteDesktop
+
+[input-record]
+title = Records keyboard and pointer input of the whole session
+rationale = The RECORD extension streams every core input event on the display
+  to the requesting client regardless of focus: it is the classic X11
+  keylogger primitive. Polling XQueryKeymap reads the global key state
+  without any focus and is the other well-known technique. Legitimate uses
+  (macro tools, accessibility, idle detection) exist but are rare in chat or
+  meeting clients.
+symbols = XRecordCreateContext XRecordEnableContext XRecordEnableContextAsync
+  xcb_record_create_context xcb_record_enable_context XQueryKeymap xcb_query_keymap
+
+[keyboard-grab]
+title = Grabs the keyboard or individual key combinations globally
+rationale = An active keyboard grab routes all key events to one client until
+  released; a passive key grab steals a combination from every other
+  application. Global push-to-talk hotkeys and menus use grabs, so this is a
+  weaker signal than input-record, but a grab is also how a fake lock screen
+  or password prompt captures typing.
+symbols = XGrabKeyboard XGrabKey xcb_grab_keyboard xcb_grab_key
+
+[xi2-event-selection]
+title = Selects XInput2 events, which can include raw input from all devices
+rationale = XISelectEvents on the root window with XI_RawKeyPress or
+  XI_RawMotion receives every key and motion event system-wide, unfiltered
+  by focus. The event mask is data built at run time, so a static scan can
+  only show that the object selects XI2 events; every modern toolkit does
+  that for touch and smooth scrolling. Treat as context for input-record, not
+  as evidence on its own.
+symbols = XISelectEvents xcb_input_xi_select_events xcb_input_xi_select_events_checked
+
+[input-injection]
+title = Synthesizes keyboard and pointer input into other applications
+rationale = XTEST fakes input events that the server delivers as if they came
+  from real hardware, and libei is the Wayland-era equivalent. Remote-control
+  features in meeting apps use this; anything else with it can type into
+  your terminal.
+symbols = XTestFakeKeyEvent XTestFakeButtonEvent XTestFakeMotionEvent
+  XTestFakeRelativeMotionEvent xcb_test_fake_input
+  ei_device_keyboard_key ei_device_pointer_motion ei_device_pointer_motion_absolute
+
+[window-introspection]
+title = Enumerates other clients' windows and reads their titles
+rationale = Walking the window tree and reading WM_NAME reveals which
+  applications and documents are open, including titles of browser tabs.
+  Window managers and taskbars need it; many toolkits also call XQueryTree
+  internally, so this is the weakest entry in the database and is most
+  useful in diff mode, when it appears in a component that never had it.
+symbols = XQueryTree xcb_query_tree XFetchName XGetWMName
