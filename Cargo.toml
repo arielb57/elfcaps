@@ -1,0 +1,19 @@
+[package]
+name = "elfcaps"
+version = "0.1.0"
+edition = "2021"
+description = "Static audit of Linux binaries: which privacy-sensitive X11, input and screen APIs they can reach"
+license = "MIT"
+readme = "README.md"
+keywords = ["elf", "audit", "x11", "privacy", "security"]
+categories = ["command-line-utilities", "development-tools"]
+
+[lib]
+name = "elfcaps"
+path = "src/lib.rs"
+
+[[bin]]
+name = "elfcaps"
+path = "src/main.rs"
+
+[dependencies]
