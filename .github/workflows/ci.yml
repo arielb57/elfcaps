@@ -12,7 +12,9 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # Pinned: `-D warnings` on a floating stable turns a clippy release
+      # into a build break with no change here. Bump deliberately.
+      - uses: dtolnay/rust-toolchain@1.94.1
         with:
           components: clippy, rustfmt
       - name: Format
@@ -26,3 +28,13 @@ jobs:
           cargo run --example make_bundle -- demo
           cargo run -- scan demo/chatapp-1.0
           cargo run -- diff demo/chatapp-1.0 demo/chatapp-1.1 || test $? -eq 1
+
+  # Tests also run against current stable, so real breakage still surfaces
+  # even though the lint job is pinned.
+  test-stable:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --all-targets
